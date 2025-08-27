@@ -79,3 +79,139 @@ END$$
 
 DELIMITER ;
 
+/* Task 7 create a stored procedure called CheckBooking to check whether a table in the restaurant is already booked.
+Creating this procedure helps to minimize the effort involved in repeatedly coding the same SQL statements.*/
+
+delimiter $$
+CREATE PROCEDURE CheckBooking(IN p_date DATE,IN p_table_number INT)
+BEGIN
+select if(exists(
+
+			select customer_id
+			from bookings b join diningtable di on b.table_id = di.table_id
+			where di.table_number = p_table_number
+				and date(b.booking_datetime) = p_date
+				and b.booking_status in ('CONFIRMED','SEATED')
+			),
+			CONCAT('Table ', p_table_number, ' is already booked'),
+			CONCAT('Table ', p_table_number, ' is available')
+           ) as 'Booking Status';
+END$$
+delimiter ;
+
+CALL CheckBooking('2022-11-12', 3);
+
+/* Task 8 Little Lemon need to verify a booking, and decline any reservations
+for tables that are already booked under another name.*/
+
+DROP PROCEDURE IF EXISTS AddValidBooking;
+DELIMITER $$
+
+CREATE PROCEDURE AddValidBooking(IN p_date DATE, IN p_table_number INT)
+BEGIN
+  START TRANSACTION;
+
+  INSERT INTO bookings
+    (customer_id, table_id, staff_id, booking_datetime, party_size, booking_status, notes)
+  SELECT 1, d.table_id, NULL, CONCAT(p_date,' 00:00:00'), 2, 'CONFIRMED', 'AddValidBooking'
+  FROM diningtable d
+  WHERE d.table_number = p_table_number
+    AND NOT EXISTS (
+      SELECT 1 FROM bookings b
+      WHERE b.table_id = d.table_id
+        AND DATE(b.booking_datetime) = p_date
+        AND b.booking_status IN ('CONFIRMED','SEATED')
+    )
+  LIMIT 1;
+
+  IF ROW_COUNT() = 1 THEN
+    COMMIT;
+    SELECT CONCAT('Booking confirmed for table ', p_table_number, ' on ', p_date) AS `Booking status`;
+  ELSE
+    ROLLBACK;
+    SELECT CONCAT('Table ', p_table_number, ' is already booked') AS `Booking status`;
+  END IF;
+END$$
+
+DELIMITER ;
+
+/* Task 9 In this first task you need to create a new procedure called AddBooking to add a new table booking record.
+The procedure should include four input parameters in the form of the following bookings parameters:*/
+
+DROP PROCEDURE IF EXISTS AddBooking;
+DELIMITER $$
+
+CREATE PROCEDURE AddBooking(
+  IN p_booking_id   INT,
+  IN p_customer_id  INT,
+  IN p_table_number INT,
+  IN p_booking_date DATE
+)
+BEGIN
+  DECLARE v_table_id INT;
+
+  -- look up the table_id for the given table number
+  SELECT dt.table_id
+    INTO v_table_id
+  FROM diningtable AS dt
+  WHERE dt.table_number = p_table_number
+  LIMIT 1;
+
+  -- insert the booking (set any defaults you like)
+  INSERT INTO bookings
+    (booking_id, customer_id, table_id, staff_id, booking_datetime,
+     party_size, booking_status, notes)
+  VALUES
+    (p_booking_id, p_customer_id, v_table_id, NULL,
+     CONCAT(p_booking_date, ' 00:00:00'),
+     2, 'CONFIRMED', 'Added via AddBooking');
+
+  SELECT 'New booking added' AS Confirmation;
+END$$
+
+DELIMITER ;
+
+CALL AddBooking(21, 3, 4, '2022-12-30');
+
+/* Task 10 For your second task, Little Lemon need you to create a new procedure called UpdateBooking that they can use
+to update existing bookings in the booking table.*/
+
+DROP PROCEDURE IF EXISTS UpdateBooking;
+DELIMITER $$
+
+CREATE PROCEDURE UpdateBooking(IN p_booking_id INT, IN p_booking_date DATE)
+BEGIN
+  UPDATE bookings
+     SET booking_datetime = CONCAT(p_booking_date, ' 00:00:00'),
+         notes = 'Updated via UpdateBooking'
+   WHERE booking_id = p_booking_id;
+
+  SELECT IF(ROW_COUNT() = 0,
+            CONCAT('Booking ', p_booking_id, ' not found'),
+            CONCAT('Booking ', p_booking_id, ' updated')) AS Confirmation;
+END$$
+
+DELIMITER ;
+
+CALL UpdateBooking(9, '2022-12-17');
+
+/* Task 11 Little Lemon need you to create a new procedure called CancelBooking that they can use
+to cancel or remove a booking.*/
+
+DROP PROCEDURE IF EXISTS CancelBooking;
+DELIMITER $$
+
+CREATE PROCEDURE CancelBooking(IN p_booking_id INT)
+BEGIN
+  DELETE FROM bookings
+  WHERE booking_id = p_booking_id;
+
+  SELECT IF(ROW_COUNT() = 0,
+            CONCAT('Booking ', p_booking_id, ' not found'),
+            CONCAT('Booking ', p_booking_id, ' cancelled')) AS Confirmation;
+END$$
+
+DELIMITER ;
+
+CALL CancelBooking(9);
+
